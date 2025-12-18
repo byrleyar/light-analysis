@@ -1,0 +1,27 @@
+{
+    "Cameroon": {
+        "Capital": [
+            3.8480,
+            11.5021
+        ],
+        "City_Name": "Douala",
+        "City": [
+            4.0511,
+            9.7679
+        ]
+    },
+    "Japan_1": {
+        "Capital": [
+            35.6762,
+            139.6503
+        ],
+        "City_Name": "Fukuoka",
+        "City": [
+            33.5902,
+            130.4017
+        ],
+        "Radius": 50,
+        "Cap_Radius": 50,
+        "Comment": "Optional notes about this target"
+    }
+}
