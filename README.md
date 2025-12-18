@@ -57,7 +57,8 @@ This project analyzes nighttime light data (VIIRS) using Google Earth Engine to 
             "City_Name": "Name",
             "City": [Lat, Lon],
             "Radius": 50,       // Optional: Override city search radius (km)
-            "Cap_Radius": 50    // Optional: Override capital search radius (km)
+            "Cap_Radius": 50,   // Optional: Override capital search radius (km)
+            "Comment": "Note"   // Optional: Add context or notes
         }
     }
     ```
