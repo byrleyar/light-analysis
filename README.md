@@ -22,12 +22,21 @@ This project analyzes nighttime light data (VIIRS) using Google Earth Engine to 
     ```
 
 3.  **Activate the virtual environment**:
-1.  Clone the repository.
-2.  Install the required Python packages:
+    - On macOS/Linux:
+      ```bash
+      source venv/bin/activate
+      ```
+    - On Windows:
+      ```bash
+      .\venv\Scripts\activate
+      ```
+
+4.  **Install the required Python packages**:
     ```bash
     pip install earthengine-api pandas python-dotenv
     ```
-3.  Authenticate with Earth Engine:
+
+5.  **Authenticate with Earth Engine**:
     ```bash
     earthengine authenticate
     ```
@@ -72,7 +81,6 @@ The script will initialize Earth Engine using the project ID from your `.env` fi
 
 The script prints the analysis results to the console, showing:
 - **COUNTRY**: Name of the country.
-
 - **CITY**: Name of the city.
 - **POP(Strict)**: Population living on "Built-up" (concrete) pixels. Good for density checks.
 - **POP(Metro)**: Population living within 2km of built-up areas. Better for total metro area count.
