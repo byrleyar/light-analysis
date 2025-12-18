@@ -24,6 +24,81 @@ except Exception as e:
 
 
 _STATS_CACHE = {}
+_NATIONAL_CACHE = {}
+
+# Mapping for LSIB country names
+NAME_MAPPING = {
+    "South Africa_1": "South Africa",
+    "South Africa_2": "South Africa",
+    "South Africa_3": "South Africa",
+    "Australia_1": "Australia",
+    "Australia_2": "Australia",
+    "Australia_3": "Australia",
+    "China_1": "China",
+    "China_2": "China",
+    "China_3": "China",
+    "China_4": "China",
+    "Indonesia_1": "Indonesia",
+    "Indonesia_2": "Indonesia",
+    "Japan_1": "Japan",
+    "Japan_2": "Japan",
+    "Japan_3": "Japan",
+    "Japan_4": "Japan",
+    "Japan_5": "Japan",
+    "Japan_6": "Japan",
+    "Bosnia_1": "Bosnia & Herzegovina",
+    "Bosnia_2": "Bosnia & Herzegovina",
+    "France_1": "France",
+    "France_2": "France",
+    "France_3": "France",
+    "France_4": "France",
+    "France_5": "France",
+    "Germany_1": "Germany",
+    "Germany_2": "Germany",
+    "Germany_3": "Germany",
+    "Germany_4": "Germany",
+    "Germany_5": "Germany",
+    "Italy_1": "Italy",
+    "Italy_2": "Italy",
+    "Italy_3": "Italy",
+    "Poland_1": "Poland",
+    "Poland_2": "Poland",
+    "Turkey_1": "Turkey",
+    "Turkey_2": "Turkey",
+    "Turkey_3": "Turkey",
+    "UK_1": "United Kingdom",
+    "UK_2": "United Kingdom",
+    "Saudi Arabia_1": "Saudi Arabia",
+    "Saudi Arabia_2": "Saudi Arabia",
+    "India_1": "India",
+    "India_2": "India",
+    "India_3": "India",
+    "India_4": "India",
+    "Pakistan_1": "Pakistan",
+    "Pakistan_2": "Pakistan",
+    "Pakistan_3": "Pakistan",
+    "Brazil_1": "Brazil",
+    "Brazil_2": "Brazil",
+    "Mexico_1": "Mexico",
+    "Mexico_2": "Mexico",
+    "Mexico_3": "Mexico",
+    "Mexico_4": "Mexico",
+    "Mexico_5": "Mexico",
+    "Mexico_6": "Mexico",
+    "Mexico_7": "Mexico",
+    "Mexico_8": "Mexico",
+    "Mexico_9": "Mexico",
+    "Greenland (DK)": "Greenland",
+    "South Korea": "Korea, South",
+    "UAE": "United Arab Emirates",
+    "Canada_1": "Canada",
+    "Canada_2": "Canada",
+    "Canada_3": "Canada",
+    "Canada_4": "Canada",
+    "Canada_5": "Canada",
+    "Canada_6": "Canada",
+    "Canada_7": "Canada"
+}
 
 def haversine(lat1, lon1, lat2, lon2):
     """
@@ -40,6 +115,72 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * math.asin(math.sqrt(a)) 
     r = 6371 # Radius of earth in kilometers. Use 3956 for miles
     return c * r
+
+def get_national_lights(country_name, year):
+    """
+    Calculates the Total Sum of Lights (SOL) for the entire country.
+    Uses RAW VIIRS (no smart mask) to avoid Timeouts.
+    """
+    # 0. CHECK CACHE
+    cache_key = (country_name, year)
+    if cache_key in _NATIONAL_CACHE:
+        return _NATIONAL_CACHE[cache_key]
+
+    # 1. Load Boundaries
+    countries = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017")
+    filtered = countries.filter(ee.Filter.eq('country_na', country_name))
+    
+    if filtered.size().getInfo() == 0:
+        print(f"WARNING: Country '{country_name}' not found in LSIB.")
+        return 1 # Avoid division by zero if name not found
+        
+    country_geom = filtered.geometry()
+
+    # 2. Load Light Data (VIIRS)
+    light_dataset = ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG") \
+        .filterDate(f'{year}-01-01', f'{year}-12-31') \
+        .select('avg_rad')
+    
+    # Average over the year to remove seasonal noise (snow/clouds)
+    national_light = light_dataset.mean().clip(country_geom)
+    
+    # 3. Calculate Mean Radiance (Scale-Independent)
+    # We use a coarser scale (5000m) for speed, but Mean is robust to scale.
+    light_stats = national_light.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=country_geom,
+        scale=5000, 
+        maxPixels=1e13,
+        tileScale=4,
+        bestEffort=True
+    )
+    mean_val = light_stats.get('avg_rad').getInfo()
+    mean_val = mean_val if mean_val else 0
+
+    # 4. Calculate Total Area (sq meters)
+    area_image = ee.Image.pixelArea().clip(country_geom)
+    area_stats = area_image.reduceRegion(
+        reducer=ee.Reducer.sum(),
+        geometry=country_geom,
+        scale=5000, 
+        maxPixels=1e13,
+        tileScale=4,
+        bestEffort=True
+    )
+    area_sqm = area_stats.get('area').getInfo()
+    area_sqm = area_sqm if area_sqm else 0
+
+    # 5. Normalize to 500m pixels (City Scale)
+    # City SOL is Sum of 500m pixels.
+    # National SOL = Mean Radiance * (Total Area / Area of 500m pixel)
+    pixel_area_500m = 500 * 500 # 250,000 sqm
+    normalized_sol = mean_val * (area_sqm / pixel_area_500m)
+    
+    result = normalized_sol if normalized_sol else 1
+    
+    # CACHE RESULT
+    _NATIONAL_CACHE[cache_key] = result
+    return result
 
 def get_stats(lat, lon, radius_km, year):
     """
@@ -147,6 +288,11 @@ print(f"--- Processing Cities ({YEAR} Data) ---\n")
 for country, data in targets.items():
     print(f"Analyzing {country}...")
     
+    # 0. Get National Data
+    clean_country_name = NAME_MAPPING.get(country, country)
+    print(f"  Fetching National Totals for {clean_country_name}...")
+    nat_lights = get_national_lights(clean_country_name, YEAR)
+    
 
     # Determine radius (use city-specific if available, else default)
     radius = data.get("Radius", RADIUS)
@@ -173,6 +319,9 @@ for country, data in targets.items():
     # Using STRICT population for this check as it relates to industrial density
     light_per_capita = cand_light / cand_pop_strict if cand_pop_strict > 0 else 0
     
+    # 6. National Share
+    share_of_nation = (cand_light / nat_lights) * 100 if nat_lights > 0 else 0
+    
     results_data.append({
         "Country": country,
 
@@ -185,19 +334,21 @@ for country, data in targets.items():
         "City_Pop_Metro": cand_pop_metro,
         "City_Area": cand_area,
         "Distance_km": dist_km,
-        "Score (%)": round(score, 1),
+        "Nat_SOL": nat_lights,
+        "% of Nation": round(share_of_nation, 2),
+        "% of CAP": round(score, 1),
         "Light/Cap": round(light_per_capita, 3)
     })
 
 # --- DISPLAY RESULTS ---
 # print("(SOL = light intensity of an area in nanoWatts / cm^2 / steradian)")
-print("\n" + "="*170)
-print(f"{'COUNTRY':<15} {'CITY':<20} {'POP(Strict)':<12} {'POP(Metro)':<12} {'CITY SOL':<12} {'AREA km2':<10} {'CAP SOL':<12} {'CAP POP(S)':<12} {'CAP POP(M)':<12} {'DIST km':<10} {'% of CAP':<10} {'LIGHT/CAP'}")
-print("="*170)
+print("\n" + "="*200)
+print(f"{'COUNTRY':<15} {'CITY':<20} {'POP(Strict)':<12} {'POP(Metro)':<12} {'CITY SOL':<12} {'AREA km2':<10} {'CAP SOL':<12} {'CAP POP(S)':<12} {'CAP POP(M)':<12} {'DIST km':<10} {'NAT SOL':<12} {'% of NAT':<10} {'% of CAP':<10} {'LIGHT/CAP'}")
+print("="*200)
 
 for row in results_data:
-    print(f"{row['Country']:<15} {row['City_City']:<20} {row['City_Pop_Strict']:<12.0f} {row['City_Pop_Metro']:<12.0f} {row['City_SOL']:<12.0f} {row['City_Area']:<10.1f} {row['Capital_SOL']:<12.0f} {row['Capital_Pop_Strict']:<12.0f} {row['Capital_Pop_Metro']:<12.0f} {row['Distance_km']:<10.0f} {row['Score (%)']:<10} {row['Light/Cap']}")
-print("="*170)
+    print(f"{row['Country']:<15} {row['City_City']:<20} {row['City_Pop_Strict']:<12.0f} {row['City_Pop_Metro']:<12.0f} {row['City_SOL']:<12.0f} {row['City_Area']:<10.1f} {row['Capital_SOL']:<12.0f} {row['Capital_Pop_Strict']:<12.0f} {row['Capital_Pop_Metro']:<12.0f} {row['Distance_km']:<10.0f} {row['Nat_SOL']:<12.0f} {row['% of Nation']:<10} {row['% of CAP']:<10} {row['Light/Cap']}")
+print("="*200)
 
 # --- EXPORT TO CSV ---
 df = pd.DataFrame(results_data)

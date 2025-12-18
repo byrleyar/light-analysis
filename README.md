@@ -65,6 +65,9 @@ python analyze_lights.py
 
 The script will initialize Earth Engine using the project ID from your `.env` file and begin processing the cities listed in `targets.json`.
 
+> [!NOTE]
+> Processing can take **up to 10 minutes** per city/capital pair due to the complexity of the Earth Engine calculations (especially for national totals). Please be patient.
+
 ## Output
 
 The script prints the analysis results to the console, showing:
@@ -79,6 +82,8 @@ The script prints the analysis results to the console, showing:
 - **CAP POP(S)**: Capital Population (Strict).
 - **CAP POP(M)**: Capital Population (Metro).
 - **DIST km**: Distance between the city and the capital (km).
+- **NAT SOL**: Total Sum of Lights for the entire country.
+- **% of NAT**: The city's share of the national light output.
 - **% of CAP**: The ratio of City Light to Capital Light.
 - **LIGHT/CAP**: Light Intensity per Capita (False Positive Check).
   - Normal cities: ~0.05 - 0.5
@@ -93,3 +98,15 @@ The script also saves the full results to `light_analysis_results.csv` in the sa
 - **Nighttime Lights**: NOAA VIIRS DNB Monthly Composites (Year: 2023, Configurable).
 - **Population**: WorldPop Global Project Population Data (Year: 2020).
 - **Land Cover**: ESA WorldCover v200 (Year: 2021).
+
+## Calculation Methodology
+
+### National Sum of Lights (NAT SOL)
+To ensure the National SOL is comparable to the City SOL (which is calculated at a 500m pixel resolution), we normalize the national value:
+
+1.  Calculate the **Mean Radiance** of the entire country (scale-independent).
+2.  Calculate the **Total Area** of the country ($m^2$).
+3.  Calculate the **Area of a 500m pixel** ($250,000 m^2$).
+4.  `NAT SOL = Mean Radiance * (Total Area / 250,000)`.
+
+This approach prevents the "Sum of Lights" from being artificially low when calculated at coarser scales (e.g., 5000m) to avoid timeouts.
